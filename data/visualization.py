@@ -48,12 +48,12 @@ for id, ax in zip(id_list,axs.flatten()):
         legend=False,
     )
     data_dose = data_plot[data_plot["EVID"] == 1]
-    sns.lineplot(
+    sns.scatterplot(
         data=data_dose,
         x="TIME",
         y="AMT",
-        markers=True,
-        dashes=False,
+        # markers=True,
+        # dashes=False,
         # palette="tab10",
         ax=ax,
         # legend='brief' if (id == 47 or id == 11) else False
