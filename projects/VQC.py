@@ -13,10 +13,10 @@ class VQC_class(torch.nn.Module):
         self.n_qubits = n_qubits
         self.n_layers = n_layers
         self.output_size = output_size
-
-#         self.clayer_1 = torch.nn.Linear(input_size, n_qubits)
+        self.activation = nn.ReLU()
+        self.clayer_1 = torch.nn.Linear(input_size, n_qubits)
         # self.qlayer = qml.qnn.TorchLayer(qnode, weights_shape)
-#         self.clayer_2 = torch.nn.Linear(n_qubits, output_size)
+        self.clayer_2 = torch.nn.Linear(n_qubits, output_size)
 #         weights_shape = qml.StronglyEntanglingLayers.shape(n_layers=n_layers, n_wires=n_qubits)
         weights_shape = (n_layers, n_qubits)
         self.weights = nn.Parameter(torch.randn(weights_shape))
@@ -24,11 +24,11 @@ class VQC_class(torch.nn.Module):
     def QNode(self, inputs, weights):
         @qml.qnode(self.sim_dev, interface="torch", diff_method="backprop")# diff_method="backprop")
         def qnode(inputs, weights):
-#             qml.AngleEmbedding(inputs, wires=range(self.n_qubits))
-            qml.AmplitudeEmbedding(inputs, wires=range(self.n_qubits), pad_with = 0.)
+            qml.AngleEmbedding(inputs, wires=range(self.n_qubits))
+#             qml.AmplitudeEmbedding(inputs, wires=range(self.n_qubits), pad_with = 0.)
             qml.BasicEntanglerLayers(weights, wires=range(self.n_qubits))
 #             qml.StronglyEntanglingLayers(weights, wires=range(self.n_qubits))
-            return [qml.expval(qml.PauliZ(wires=i)) for i in range(self.n_qubits)][:self.output_size]
+            return [qml.expval(qml.PauliZ(wires=i)) for i in range(self.n_qubits)]#[:self.output_size]
 
         has_batch_dim = len(inputs.shape) > 1
 
@@ -55,9 +55,11 @@ class VQC_class(torch.nn.Module):
         return results
 
     def forward(self, X):
-#         X = self.clayer_1(X)
+        X = self.clayer_1(X)
+        X = self.activation(X)
         X = self.QNode(X, self.weights)
-#         X = self.clayer_2(X)
+        X = self.activation(X)
+        X = self.clayer_2(X)
         return X
 
     def _freeze_Qnode(self):
