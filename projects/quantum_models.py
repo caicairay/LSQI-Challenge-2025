@@ -1,7 +1,85 @@
 import torch
 import torch.nn as nn
 import pennylane as qml
+import math
 
+class QuantumEntanglingLinear_new(nn.Module):
+    def __init__(self, dim, num_layers=2):
+        """
+        Quantum-inspired layer:
+        - Single-qubit rotations (trainable, 3 parameters per qubit)
+        - Two-qubit cyclic CNOTs (fixed)
+        Precompute matrices for efficiency.
+        """
+        super().__init__()
+        assert math.log2(dim).is_integer(), "dim must be a power of 2"
+        self.dim = dim
+        self.n_qubits = int(math.log2(dim))
+        self.num_layers = num_layers
+
+        # Trainable single-qubit rotation angles: (num_layers, n_qubits, 3)
+        self.local_angles = nn.Parameter(torch.randn(num_layers, self.n_qubits, 3))
+
+        # Precompute fixed cyclic CNOT layer
+        self.register_buffer("cnot_matrix", self.build_cyclic_cnot())
+
+    def kron_n(self, matrices):
+        out = matrices[0]
+        for m in matrices[1:]:
+            out = torch.kron(out, m)
+        return out
+
+    def single_qubit_gate(self, theta):
+        """3-parameter single qubit gate Rx Ry Rz"""
+        theta_x, theta_y, theta_z = theta
+        Rx = torch.tensor([[torch.cos(theta_x/2), -torch.sin(theta_x/2)],
+                           [torch.sin(theta_x/2), torch.cos(theta_x/2)]], dtype=torch.float32)
+        Ry = torch.tensor([[torch.cos(theta_y/2), -torch.sin(theta_y/2)],
+                           [torch.sin(theta_y/2), torch.cos(theta_y/2)]], dtype=torch.float32)
+        Rz = torch.tensor([[torch.cos(theta_z/2), -torch.sin(theta_z/2)],
+                           [torch.sin(theta_z/2), torch.cos(theta_z/2)]], dtype=torch.float32)
+        return Rz @ Ry @ Rx
+
+    def one_qubit_layer_matrix(self, layer_idx):
+        """Compute full single-qubit layer matrix by tensoring all qubits"""
+        matrices = [self.single_qubit_gate(self.local_angles[layer_idx, q]) for q in range(self.n_qubits)]
+        return self.kron_n(matrices)
+
+    def build_cyclic_cnot(self):
+        """Precompute full cyclic CNOT layer matrix"""
+        n = self.n_qubits
+        dim = 2**n
+        I = torch.eye(dim, dtype=torch.float32)
+        cnot = I.clone()
+
+        # Apply cyclic CNOTs (0->1, 1->2, ..., n-2->n-1)
+        for control in range(n-1):
+            target = control + 1
+            for i in range(dim):
+                if (i >> control) & 1:
+                    j = i ^ (1 << target)
+                    cnot[[i,j], :] = cnot[[j,i], :]
+
+        # Wrap-around CNOT (n-1 -> 0)
+        control = n-1
+        target = 0
+        for i in range(dim):
+            if (i >> control) & 1:
+                j = i ^ (1 << target)
+                cnot[[i,j], :] = cnot[[j,i], :]
+        return cnot
+
+    def forward(self, x):
+        out = x
+        for l in range(self.num_layers):
+            # Compute single-qubit layer matrix
+            single_matrix = self.one_qubit_layer_matrix(l).to(x.device)
+            out = out @ single_matrix.T
+
+            # Multiply by fixed cyclic CNOT matrix
+            out = out @ self.cnot_matrix.T
+
+        return out
 class QuantumLikeLinear(nn.Module):
     def __init__(self, dim, num_rotations=None):
         """

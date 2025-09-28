@@ -159,6 +159,7 @@ class MLP_conditional_memory(torch.nn.Module):
            torch.nn.Linear(self.indim, w),
 #             torch.nn.Tanh(),
             QuantumEntanglingLinearVectorized(w),
+#             QuantumEntanglingLinear_new(w),
 #             QuantumEntanglingLinear(w),
             torch.nn.SELU(),
            torch.nn.Linear(w,self.out_dim),

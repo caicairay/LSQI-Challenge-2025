@@ -310,3 +310,26 @@ def sde_solver(sde, initial_state, time_span):
         noise_trajectory.append(diffusion * noise)
 
     return torch.stack(trajectory), torch.stack(noise_trajectory)
+@torch.no_grad()
+def simulate(model, sde, x0_classes, x0_values, time_history, len_path):
+    total_pred = []
+    total_pred.append(x0_values[0].unsqueeze(0))
+    for i in range(len_path):
+        time_span = torch.linspace(0., 1./len_path, 10).to(x0_values.device)
+        if model.memory > 0:
+            new_x_classes = torch.cat([x0_classes[i].unsqueeze(0), time_history.unsqueeze(0)], dim=1)
+        else:
+            new_x_classes = x0_classes[i].unsqueeze(0)
+        with torch.no_grad():
+            if i == 0:
+                testpt = torch.cat([x0_values[i].unsqueeze(0), new_x_classes], dim=1)
+            else:
+                testpt = torch.cat([pred_traj, new_x_classes], dim=1)
+        traj, noise_traj = sde_solver(sde, testpt, time_span)
+        pred_traj = traj[-1, :, :model.dim]
+        noise_traj = noise_traj[-1, :, :model.dim]
+        if model.memory > 0:
+            flattened_coords = pred_traj.flatten()
+            time_history = torch.cat([time_history[model.dim:].unsqueeze(0), flattened_coords.unsqueeze(0)], dim=1).squeeze()
+        total_pred.append(pred_traj)
+    return total_pred
